@@ -1,11 +1,14 @@
 # Very unsophisticated Makefile
 #DEBUG=-g
 
-ppmcvt: ppmcvt.o
-	gcc $(DEBUG) -o ppmcvt ppmcvt.o
+ppmcvt: pbm.o ppmcvt.o
+	gcc $(DEBUG) -o ppmcvt ppmcvt.o pbm.o
 
-ppmcvt.o: ppmcvt.h ppmcvt.c
+ppmcvt.o: pbm.h ppmcvt.h ppmcvt.c
 	gcc $(DEBUG) -c ppmcvt.c
 
+pbm.o: pbm.h pbm.c
+	gcc $(DEBUG) -c pbm.c
+
 clean: 
-	rm ppmcvt ppmcvt.o
+	rm ppmcvt ppmcvt.o pbm.o
