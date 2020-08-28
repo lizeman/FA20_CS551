@@ -155,14 +155,52 @@ void sepia_transform_inplace(PPMImage * ppm) {
     }
 }
 
+void remove_RGB_channel_inplace(PPMImage * ppm, const char * channel) {
+    int channel_idx;
+    if (0 == strcmp(channel, RED))
+        channel_idx = 0;
+    else if (0 == strcmp(channel, GREEN))
+        channel_idx = 1;
+    else if (0 == strcmp(channel, BLUE))
+        channel_idx = 2;
+    else {
+        fprintf(stderr, ERR_INVALID_CHANNEL, channel);
+        exit(1);
+    }
+    for (int h=0; h<ppm->height; h++) {
+        for (int w=0; w<ppm->width; w++) {
+            ppm->pixmap[channel_idx][h][w] = 0;
+        }
+    }
+}
+
+void isolate_RGB_channel_inplace(PPMImage * ppm, const char * channel) {
+    if (0 == strcmp(channel, RED)) {
+        remove_RGB_channel_inplace(ppm, GREEN);
+        remove_RGB_channel_inplace(ppm, BLUE);
+    } else if (0 == strcmp(channel, GREEN)) {
+        remove_RGB_channel_inplace(ppm, RED);
+        remove_RGB_channel_inplace(ppm, BLUE);
+    } else if (0 == strcmp(channel, BLUE)) {
+        remove_RGB_channel_inplace(ppm, RED);
+        remove_RGB_channel_inplace(ppm, GREEN);
+    }
+    else {
+        fprintf(stderr, ERR_INVALID_CHANNEL, channel);
+        exit(1);
+    }
+}
+
+
 
 // argument parse
 int main (char argc, char *argv[]) {
     extern char *optarg;
     extern int optind;
-    int opt, err = 0;
-    char *in_fname = NULL;
-    char *out_fname = NULL;
+    int opt;
+    char * in_fname = NULL;
+    char * out_fname = NULL;
+    char * channel = NULL;
     char conv = 'b';
     bool have_conv = false;
     long ret;
@@ -187,7 +225,7 @@ int main (char argc, char *argv[]) {
                     fprintf(stderr, ERR_MULTI_CONV);
                     exit(1);
                 }
-                conv = 'g';
+                conv = opt;
                 have_conv = true;
                 ret = strtol(optarg, &cptr, 10);
                 if (ret < 1 || ret > 65535) {
@@ -195,18 +233,33 @@ int main (char argc, char *argv[]) {
                     exit(1);
                 }
                 break;
+            case 'i':
+            case 'r':
+                if (have_conv) {
+                    fprintf(stderr, ERR_MULTI_CONV);
+                    exit(1);
+                }
+                conv = opt;
+                have_conv = true;
+                channel = optarg;
+                printf("[DEBUG] channel=%s\n", channel);
+                if (channel == NULL || \
+                        (strcmp(channel, RED) && strcmp(channel, GREEN) && strcmp(channel, BLUE))) {
+                    fprintf(stderr, ERR_INVALID_CHANNEL, channel);
+                    exit(1);
+                }
+                break;
             case 'o':
                 out_fname = optarg;
                 break;
             case '?':
-                err = 1;
+                if (optopt == 'o')
+                    fprintf(stderr, ERR_NO_OUT);
+                else
+                    fprintf(stderr, USAGE);
+                exit(1);
                 break;
         }
-    }
-
-    if (err) {
-        fprintf(stderr, USAGE);
-	exit(1);
     }
 
     // printf("[DEBUG] optind=%d, argc=%d\n", optind, argc);
@@ -233,9 +286,18 @@ int main (char argc, char *argv[]) {
             write_pgmfile(pgm, out_fname);
             del_pgmimage(pgm);
             break;
+        case 'i':
+            isolate_RGB_channel_inplace(ppm, channel);
+            write_ppmfile(ppm, out_fname);
+            break;
+        case 'r':
+            remove_RGB_channel_inplace(ppm, channel);
+            write_ppmfile(ppm, out_fname);
+            break;
         case 's':
             sepia_transform_inplace(ppm);
             write_ppmfile(ppm, out_fname);
+            break;
         case '?':
             // should not touch this cond
             break;
