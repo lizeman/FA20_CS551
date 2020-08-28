@@ -6,6 +6,8 @@
 #ifndef ppmcvt_h
 #define ppmcvt_h
 
+#include "pbm.h"
+
 #define RED "red"
 #define GREEN "green"
 #define BLUE "blue"
@@ -16,8 +18,7 @@
 #define ERR_MULTI_CONV "Error: Multiple transformations specified\n"
 #define ERR_INVALID_G "Error: Invalid max grayscale pixel value: %s; must be less than 65,536\n"
 #define ERR_INVALID_CHANNEL "ERROR: Invalid channel specification: (%s); should be 'red', 'green' or 'blue'\n"
-
-#include "pbm.h"
+#define ERR_INVALID_SCALE "ERROR: Invalid scale factor: %s; must be 1-8\n"
 
 typedef enum {false, true} bool;
 
@@ -41,5 +42,8 @@ PGMImage * convert_ppm_to_pgm(PPMImage *, unsigned int);
 void sepia_transform_inplace(PPMImage *);
 void remove_RGB_channel_inplace(PPMImage *, const char *);
 void isolate_RGB_channel_inplace(PPMImage *, const char *);
+void mirror_vertically_inplace(PPMImage *);
+PPMImage * thumnail_ppm(PPMImage *, unsigned int);
+void nup_ppm_inplace(PPMImage *, unsigned int);
 
 #endif /* ppmcvt_h */
