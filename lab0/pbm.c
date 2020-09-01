@@ -59,13 +59,13 @@ void write_ppmfile( PPMImage *ppm, const char *filename ){
         exit( -1 );
      }
 
-    //write pbm header
+    //write ppm header
     fprintf(outfile, "P3\n%d %d\n%d\n", ppm->width, ppm->height, ppm->max);
     
-    //read ppm and write pbm file simultaneously
+    //write ppm pixmap
     for( int h=0; h<ppm->height; h++ ){
         for ( int w=0; w<ppm->width; w++ ){
-            fprintf(outfile, "%d %d %d ",
+            fprintf(outfile, "%d %d %d  ",
                     ppm->pixmap[0][h][w],
                     ppm->pixmap[1][h][w],
                     ppm->pixmap[2][h][w] );
@@ -88,10 +88,10 @@ void write_pbmfile( PBMImage *pbm, const char * filename ) {
     //write pbm header
     fprintf(outfile, "P1\n%d %d\n", pbm->width, pbm->height);
     
-    //read ppm and write pbm file simultaneously
+    //write pbm pixmap
     for( int h=0; h<pbm->height; h++ ){
         for ( int w=0; w<pbm->width; w++ ){
-            fprintf(outfile, "%d", pbm->pixmap[h][w] );
+            fprintf(outfile, "%d ", pbm->pixmap[h][w] );
         }
             
         fprintf(outfile, "\n"); //newline after each row
@@ -108,10 +108,10 @@ void write_pgmfile( PGMImage *pgm, const char * filename ){
         exit( -1 );
      }
 
-    //write pbm header
+    //write pgm header
     fprintf(outfile, "P2\n%d %d\n%d\n", pgm->width, pgm->height, pgm->max);
     
-    //read ppm and write pbm file simultaneously
+    //write pgm pixmap
     for( int h=0; h<pgm->height; h++ ){
         for ( int w=0; w<pgm->width; w++ ){
             fprintf(outfile, "%d ", pgm->pixmap[h][w] );

@@ -1,5 +1,6 @@
-# Very unsophisticated Makefile
-#DEBUG=-g
+# Very unsophisticated Makefile, 
+# adopted from Dr. Mandelberg
+# DEBUG=-g
 
 ppmcvt: pbm.o cvtlib.o ppmcvt.o
 	gcc $(DEBUG) -o ppmcvt pbm.o cvtlib.o ppmcvt.o
@@ -14,4 +15,4 @@ pbm.o: pbm.h pbm.c
 	gcc $(DEBUG) -c pbm.c
 
 clean: 
-	rm ppmcvt ppmcvt.o pbm.o
+	rm ppmcvt ppmcvt.o pbm.o ctvlib.o

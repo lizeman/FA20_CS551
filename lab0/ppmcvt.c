@@ -85,10 +85,12 @@ int main (char argc, char *argv[]) {
                 out_fname = optarg;
                 break;
             case '?':
+                /**
                 if (optopt == 'o')
                     fprintf(stderr, ERR_NO_OUT);
                 else
                     fprintf(stderr, USAGE);
+                **/
                 exit(1);
                 break;
         }
@@ -142,6 +144,7 @@ int main (char argc, char *argv[]) {
         case 'n':
             nup_ppm_inplace(ppm, ret);
             write_ppmfile(ppm, out_fname);
+            break;
         case '?':
             // should not touch this cond
             break;
