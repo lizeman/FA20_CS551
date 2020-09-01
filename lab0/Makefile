@@ -15,4 +15,4 @@ pbm.o: pbm.h pbm.c
 	gcc $(DEBUG) -c pbm.c
 
 clean: 
-	rm ppmcvt ppmcvt.o pbm.o ctvlib.o
+	rm ppmcvt ppmcvt.o pbm.o cvtlib.o
