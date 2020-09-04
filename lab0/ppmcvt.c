@@ -3,12 +3,12 @@
 // A TUTOR OR CODE WRITTEN BY OTHER STUDENTS - Jiaying Lu
 //
 
-#include "pbm.h"
 #include "ppmcvt.h"
 #include "string.h"
 #include <getopt.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include "pbm.h"
 
 // argument parse
 int main (char argc, char *argv[]) {
