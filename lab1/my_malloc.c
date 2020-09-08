@@ -103,10 +103,25 @@ size_t get_free_list_len() {
     return len;
 }
 
+void print_free_list_info() {
+    printf("[DEBUG] free_list len=%lu\n", get_free_list_len());
+
+    // traverse
+    FreeListNode head = free_list_begin();
+    int i = 0;
+    while (head != NULL) {
+        printf("#%d node size=%lu,addr=%p\n", i++, head->size, head);
+        head = head->flink;
+    }
+}
+
 size_t get_chunk_size(void * chunk_head) {
     uint32_t * p_head = (uint32_t *) chunk_head;
     size_t size = *p_head;
-    printf("[DEBUG-get_chunk_size] *p_head=%u, size=%lu\n", *p_head, size);
+    if (*++p_head != SIGNATURE) {
+        fprintf(stderr, "allocated chunk with signature=%u != %u", *p_head, SIGNATURE);
+        return 0;
+    }
     return size;
 }
 // End Help Functions
@@ -121,31 +136,59 @@ void *my_malloc(size_t size) {
     if ((usable_node = search_and_pop_free_list(size)) == NULL) {
         printf("can not find useable_node, address=%p\n", usable_node);
         if (size <= SBRKDEFAULTSIZE - CHUNKHEADERSIZE) {
-            chunk_head = sbrk(SBRKDEFAULTSIZE);
+            if ((chunk_head = sbrk(SBRKDEFAULTSIZE)) == (void *)-1) {
+                my_errno = MYENOMEM;
+                return NULL;
+            }
             actual_size = split_chunk(chunk_head, SBRKDEFAULTSIZE, size);
             sign_chunk_header(chunk_head, actual_size);
-            get_chunk_size(chunk_head);  //DEBUG
         } else {
-            chunk_head = sbrk(size + CHUNKHEADERSIZE);
+            printf("-- only sbrk() without split_chunk()");
+            if ((chunk_head = sbrk(size + CHUNKHEADERSIZE)) == (void *)-1) {
+                my_errno = MYENOMEM;
+                return NULL;
+            }
         }
     } else {
         printf("find useable_node, address=%p, size=%lu\n", usable_node, usable_node->size);
         chunk_head = (void *) usable_node;
         actual_size = split_chunk(chunk_head, usable_node->size, size);
         sign_chunk_header(chunk_head, actual_size);
-        get_chunk_size(chunk_head);   //DEBUG
     }
     // debug
-    FreeListNode head = free_list_begin();
     printf("[DEBUG] chunk_head=%p\n", chunk_head);
-    printf("[DEBUG] free_list_begin=%p, len=%lu\n", head, get_free_list_len());
-    printf("[DEBUG] free_list head size=%lu\n", head->size);
+    print_free_list_info();
     // end debug
     return chunk_head +CHUNKHEADERSIZE;
+}
+
+//my_free: reclaims the previously allocated chunk referenced by ptr
+void my_free(void *ptr) {
+    ptr -= CHUNKHEADERSIZE;
+    size_t size = get_chunk_size(ptr);
+    if (size == 0) my_errno = MYBADFREEPTR;
+    printf("\n[DEBUG - my_free] chunk_size=%lu\n", size);
+    add_node_to_free_list(ptr, size);
+    print_free_list_info();  //DEBUG
 }
 
 
 //free_list_begin(): returns pointer to first chunk in free list
 FreeListNode free_list_begin(void) {
     return FREE_LIST_HEAD;
+}
+
+//coalesce_free_list(): merge adjacent chunks on the free list
+void coalesce_free_list(void) {
+    FreeListNode node = FREE_LIST_HEAD;
+    while (node != NULL) {
+        if ((void *)node + node->size == node->flink) {
+            node->size += node->flink->size;
+            node->flink = node->flink->flink;
+        } else {
+            node = node->flink;
+        }
+    }
+    printf("\nafter coalesce_free_list\n");
+    print_free_list_info();  //DEBUG
 }

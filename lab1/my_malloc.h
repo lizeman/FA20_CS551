@@ -9,13 +9,11 @@
 #ifndef my_malloc_h
 #define my_malloc_h
 
-#include <stdlib.h>
-
 //the size of the header for heap allocated memory chunks
 #define CHUNKHEADERSIZE 8
 
 //error signaling
-typedef enum {MYNOERROR, MYENOMEM, MYBADFREEPTR } MyErrorNo;
+typedef enum {MYNOERROR, MYENOMEM, MYBADFREEPTR} MyErrorNo;
 extern MyErrorNo my_errno;
 
 //my_malloc: returns a pointer to a chunk of heap allocated memory
