@@ -29,6 +29,7 @@
 
 FreeListNode FREE_LIST_HEAD = NULL;
 MyErrorNo my_errno=MYNOERROR;
+void * heap_low_end = NULL;    // for my_free() safety
 
 // Help Functions
 FreeListNode search_and_pop_free_list(size_t size) {
@@ -118,6 +119,7 @@ void sign_chunk_header(void * chunk_head, size_t actual_size) {
 
 //my_malloc: returns a pointer to a chunk of heap allocated memory
 void *my_malloc(size_t size) {
+    if (heap_low_end == NULL) heap_low_end = sbrk(0);
     FreeListNode usable_node = NULL; 
     void * chunk_head = NULL;
     size_t actual_size = 0;
@@ -148,6 +150,10 @@ void *my_malloc(size_t size) {
 
 //my_free: reclaims the previously allocated chunk referenced by ptr
 void my_free(void *ptr) {
+    if (heap_low_end == NULL || ptr - CHUNKHEADERSIZE < heap_low_end) {
+        my_errno = MYBADFREEPTR;
+        return;
+    }
     ptr -= CHUNKHEADERSIZE;
     uint32_t * p_head = (uint32_t *) ptr;
     if (*++p_head != SIGNATURE) {

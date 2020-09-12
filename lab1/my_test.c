@@ -1,6 +1,8 @@
 #include <stdio.h>
 #include "my_malloc.h"
 #include <unistd.h>
+#include <stdlib.h>
+#include <assert.h>
 
 size_t get_free_list_len() {
     size_t len = 0;
@@ -43,11 +45,22 @@ int main (char argc, char *argv[]) {
      * free an unvalid point
      */
     printf("\n=== Try to free unvalid point===\n");
-    //printf("free_list_begin() addr=%p\n", free_list_begin());
-    //my_free(free_list_begin());  // would crash becuase try to visit address before start of heap
-    printf("free_list_begin() addr=%p, addr+16=%p\n", free_list_begin(), free_list_begin()+16);
+    printf("my_free( free_list_begin()), addr=%p\n", free_list_begin());
+    my_free(free_list_begin());
+    print_debug_info();
+    printf("my_free( free_list_begin()+16), addr+16=%p\n", free_list_begin()+16);
     my_free(free_list_begin() + 16);
     print_debug_info();
+    printf("my_free() an officially malloced pointer\n");
+    int * iptr = malloc(4 * sizeof(int));
+    iptr[0] = 1;
+    iptr[1] = 2;
+    iptr[2] = 3;
+    iptr[3] = 4;
+    my_free(iptr);
+    print_debug_info();
+    free(iptr);
+
 
     /* Case #3:
      * malloc zero size chunk
@@ -108,5 +121,21 @@ int main (char argc, char *argv[]) {
     printf("\n===after coalesce_free_list(), free_list_len should be 2; ===\n");
     printf("the node size should be 8192, 8200\n");
     coalesce_free_list();
+    print_debug_info();
+
+    /* Case #9
+     * malloc int*
+     */
+    printf("\n===malloc int array===\n");
+    iptr = my_malloc(4 * sizeof(int));
+    iptr[0] = 1;
+    iptr[1] = 2;
+    iptr[2] = 3;
+    iptr[3] = 4;
+    assert(iptr[0] == 1);
+    assert(iptr[1] == 2);
+    assert(iptr[2] == 3);
+    assert(iptr[3] == 4);
+    my_free(iptr);
     print_debug_info();
 }
