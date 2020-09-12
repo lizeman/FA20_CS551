@@ -150,7 +150,8 @@ void *my_malloc(size_t size) {
 
 //my_free: reclaims the previously allocated chunk referenced by ptr
 void my_free(void *ptr) {
-    if (heap_low_end == NULL || ptr - CHUNKHEADERSIZE < heap_low_end) {
+    if (heap_low_end == NULL || ptr - CHUNKHEADERSIZE < heap_low_end
+            || ptr > sbrk(0)) {
         my_errno = MYBADFREEPTR;
         return;
     }

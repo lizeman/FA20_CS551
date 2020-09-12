@@ -60,7 +60,9 @@ int main (char argc, char *argv[]) {
     my_free(iptr);
     print_debug_info();
     free(iptr);
-
+    printf("my_free() pointer beyond heap high end\n");
+    my_free(sbrk(0) + 10);
+    print_debug_info();
 
     /* Case #3:
      * malloc zero size chunk

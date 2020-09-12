@@ -6,6 +6,11 @@
 //  Copyright © 2020 Dorian Arnold. All rights reserved.
 //
 
+// THIS CODE IS MY OWN WORK, IT WAS WRITTEN WITHOUT CONSULTING
+//
+// A TUTOR OR CODE WRITTEN BY OTHER STUDENTS - Jiaying Lu
+//
+
 #ifndef my_malloc_h
 #define my_malloc_h
 
