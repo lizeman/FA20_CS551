@@ -8,4 +8,4 @@ myar.o: myar.c
 	gcc $(DEBUG) -c myar.c
 
 clean: 
-	rm myar myar.o 
+	rm myar myar.o
