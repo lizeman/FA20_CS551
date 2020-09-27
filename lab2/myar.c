@@ -10,8 +10,10 @@
 #include <unistd.h>
 #include <fcntl.h>
 #include <string.h>
+#include <utime.h>
 #include <time.h>
 #include <sys/stat.h>
+#include <sys/types.h>
 
 #define BUF_MAX_SIZE 8192
 #define TIME_BUF_MAX_SIZE 80
@@ -21,6 +23,7 @@
 #define ERR_INFORMAT "myar: %s: File format not recognized\n"
 #define ERR_MALFORMED "myar: %s: Malformed archive\n"
 #define ERR_UNVALID_OP "myar: two different operation options specified\n"
+#define WARN_NO_ENTRY "no entry %s in archive\n"
 
 struct meta {
     char name[16];   // room for null
@@ -39,7 +42,7 @@ int fill_meta(struct ar_hdr hdr, struct meta * meta) {
         meta->name[i] = hdr.ar_name[i];
     }
 
-    // TODO: modify hard code
+    // TODO: modify hard code; VERY IMPORTANT!!!
     meta->mode = 0;
     meta->mode += (hdr.ar_mode[3]-'0') * 64;
     meta->mode += (hdr.ar_mode[4]-'0') * 8;
@@ -102,7 +105,7 @@ int operation_t(int ar_fd, const char * ar_fname, int verbose) {
         if (strcmp(ARFMAG, buf)) {
             fprintf(stderr, ERR_MALFORMED, ar_fname);
             return 1;
-        }
+        } // end check
         fill_meta(my_ar_hdr, &my_meta);
         lseek(ar_fd, my_meta.size, SEEK_CUR);
         if (my_meta.size % 2) lseek(ar_fd, 1, SEEK_CUR);
@@ -116,7 +119,112 @@ int operation_t(int ar_fd, const char * ar_fname, int verbose) {
         fprintf(stderr, "read_ar_hdr failed");
         return 1;
     }
+    return ret;
+}
+
+int read_write_buffer(int in_fd, int out_fd, char * buf, int size) {
+    int read_size = (size < BUF_MAX_SIZE) ? size : BUF_MAX_SIZE;
+    int io_size = 0;
+
+    while (read_size > 0 && (io_size = read(in_fd, buf, read_size)) > 0) {
+        if (io_size != read_size) return 1;   //TODO: whether need err_msg
+        if (write(out_fd, buf, read_size) != read_size) return 1;   //TODO: whether need err_msg
+        size -= read_size;
+        read_size = (size < BUF_MAX_SIZE) ? size : BUF_MAX_SIZE;
+    }
+    if (io_size == -1) return 1;   //TODO: whether need err_msg
     return 0;
+}
+
+int operation_x(int ar_fd, const char * ar_fname, const char * file_to_extract, char * buf, int x_restore) {
+    struct ar_hdr my_ar_hdr;
+    struct meta my_meta;
+    int ret;
+    int hit_flag = 0;
+    int w_fd;
+    lseek(ar_fd, SARMAG, SEEK_SET);
+    while ((ret = read(ar_fd, &my_ar_hdr, sizeof(struct ar_hdr))) > 0) {
+        // check ar_fmag
+        strncpy(buf, my_ar_hdr.ar_fmag, 2);
+        buf[2] = '\0';
+        if (strcmp(ARFMAG, buf)) {
+            fprintf(stderr, ERR_MALFORMED, ar_fname);
+            return 1;
+        }  // end check
+        fill_meta(my_ar_hdr, &my_meta);
+        if (!strcmp(my_meta.name, file_to_extract)) {
+            hit_flag = 1;
+            if (x_restore) {
+                //printf("original mode=%o, ~mode=%o\n", my_meta.mode, (~my_meta.mode) & 0777);
+                int mask_to_apply = (~my_meta.mode) & 0777;
+                mode_t mask = umask(mask_to_apply);
+                w_fd = open(file_to_extract, O_WRONLY | O_CREAT | O_TRUNC, 0777);
+                umask(mask);
+            } else {
+                w_fd = open(file_to_extract, O_WRONLY | O_CREAT | O_TRUNC, 0666);
+            }
+            if (w_fd < 0) {
+                fprintf(stderr, "%s: could not write\n", file_to_extract);
+                return 1;    
+            }
+            ret = read_write_buffer(ar_fd, w_fd, buf, my_meta.size);
+            close(w_fd);
+            if (x_restore) {
+                struct utimbuf oldt;
+                oldt.actime = my_meta.mtime;
+                oldt.modtime = my_meta.mtime;
+                if (utime(file_to_extract, &oldt) != 0) return 1;
+            }
+            return ret;
+        }
+        lseek(ar_fd, my_meta.size, SEEK_CUR);
+        if (my_meta.size % 2) lseek(ar_fd, 1, SEEK_CUR);
+    }
+    if (!hit_flag) {
+        fprintf(stderr, WARN_NO_ENTRY, file_to_extract);
+    }
+    return ret;
+}
+
+int operation_x_all(int ar_fd, const char * ar_fname, char * buf, int x_restore) {
+    struct ar_hdr my_ar_hdr;
+    struct meta my_meta;
+    int ret;
+    int w_fd;
+    lseek(ar_fd, SARMAG, SEEK_SET);
+    while ((ret = read(ar_fd, &my_ar_hdr, sizeof(struct ar_hdr))) > 0) {
+        // check ar_fmag
+        strncpy(buf, my_ar_hdr.ar_fmag, 2);
+        buf[2] = '\0';
+        if (strcmp(ARFMAG, buf)) {
+            fprintf(stderr, ERR_MALFORMED, ar_fname);
+            return 1;
+        }  // end check
+        fill_meta(my_ar_hdr, &my_meta);
+        if (x_restore) {
+            //printf("original mode=%o, ~mode=%o\n", my_meta.mode, (~my_meta.mode) & 0777);
+            int mask_to_apply = (~my_meta.mode) & 0777;
+            mode_t mask = umask(mask_to_apply);
+            w_fd = open(my_meta.name, O_WRONLY | O_CREAT | O_TRUNC, 0777);
+            umask(mask);
+        } else {
+            w_fd = open(my_meta.name, O_WRONLY | O_CREAT | O_TRUNC, 0666);
+        }
+        if (w_fd < 0) {
+            fprintf(stderr, "%s: could not write\n", my_meta.name);
+            return 1;    
+        }
+        ret = read_write_buffer(ar_fd, w_fd, buf, my_meta.size);
+        close(w_fd);
+        if (x_restore) {
+            struct utimbuf oldt;
+            oldt.actime = my_meta.mtime;
+            oldt.modtime = my_meta.mtime;
+            if (utime(my_meta.name, &oldt) != 0) return 1;
+        }
+        if (my_meta.size % 2) lseek(ar_fd, 1, SEEK_CUR);
+    }
+    return ret;
 }
 
 int main (int argc, char *argv[]) {
@@ -125,7 +233,6 @@ int main (int argc, char *argv[]) {
     int opt;
     char copt = '\0';
     char * ar_fname = NULL;
-    char * fname = NULL;
     int verbose = 0;
     int x_restore = 0;
     int ar_fd;
@@ -151,6 +258,9 @@ int main (int argc, char *argv[]) {
                 }
                 copt = 'x';
                 break;
+            case 'o':
+                x_restore = 1;
+                break;
             case '?':
                 return 1;
                 break;
@@ -166,8 +276,7 @@ int main (int argc, char *argv[]) {
 
     ar_fname = argv[optind++];
 
-    ar_fd = open(ar_fname, O_RDONLY);
-    if (ar_fd < 0) {
+    if ((ar_fd = open(ar_fname, O_RDONLY)) < 0) {
         fprintf(stderr, ERR_OPEN, ar_fname);
         return 1;
     }
@@ -187,9 +296,11 @@ int main (int argc, char *argv[]) {
     if (copt == 'x') {
         // no specified files
         if (optind == argc) {
-            printf("no specified files\n");
+            ret = operation_x_all(ar_fd, ar_fname, buf, x_restore);
         } else {
-            printf("specified files\n");
+            while (optind < argc) {
+                ret = operation_x(ar_fd, ar_fname, argv[optind++], buf, x_restore);
+            }
         }
     }  // end copt == 'x'
 
