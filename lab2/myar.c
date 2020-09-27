@@ -136,13 +136,29 @@ int read_write_buffer(int in_fd, int out_fd, char * buf, int size) {
     return 0;
 }
 
-int operation_x(int ar_fd, const char * ar_fname, const char * file_to_extract, char * buf, int x_restore) {
+int search_name_in_array(const char * name, char ** array, int start, int end) {
+    int hit_flag = 0;
+    for (int i=start; i<end; i++) {
+        if (!strcmp(name, array[i])) {
+            hit_flag = 1;
+            array[i][0] = '\0';
+        }
+    }
+    return hit_flag;
+}
+
+int check_permission(const char * fname) {
+    //TODO: if have time
+    struct stat s;
+    return 0;
+}
+
+int operation_x(int ar_fd, const char * ar_fname, char ** files_to_extract, int start, int end,\
+        char * buf, int x_restore) {
     struct ar_hdr my_ar_hdr;
     struct meta my_meta;
     int ret;
-    int hit_flag = 0;
     int w_fd;
-    lseek(ar_fd, SARMAG, SEEK_SET);
     while ((ret = read(ar_fd, &my_ar_hdr, sizeof(struct ar_hdr))) > 0) {
         // check ar_fmag
         strncpy(buf, my_ar_hdr.ar_fmag, 2);
@@ -152,19 +168,20 @@ int operation_x(int ar_fd, const char * ar_fname, const char * file_to_extract, 
             return 1;
         }  // end check
         fill_meta(my_ar_hdr, &my_meta);
-        if (!strcmp(my_meta.name, file_to_extract)) {
-            hit_flag = 1;
+        if (search_name_in_array(my_meta.name, files_to_extract, start, end)) {
+            // TODO: check permission
+            unlink(my_meta.name);
             if (x_restore) {
                 //printf("original mode=%o, ~mode=%o\n", my_meta.mode, (~my_meta.mode) & 0777);
                 int mask_to_apply = (~my_meta.mode) & 0777;
                 mode_t mask = umask(mask_to_apply);
-                w_fd = open(file_to_extract, O_WRONLY | O_CREAT | O_TRUNC, 0777);
+                w_fd = open(my_meta.name, O_WRONLY | O_CREAT | O_TRUNC, 0777);
                 umask(mask);
             } else {
-                w_fd = open(file_to_extract, O_WRONLY | O_CREAT | O_TRUNC, 0666);
+                w_fd = open(my_meta.name, O_WRONLY | O_CREAT | O_TRUNC, 0666);
             }
             if (w_fd < 0) {
-                fprintf(stderr, "%s: could not write\n", file_to_extract);
+                fprintf(stderr, "%s: could not write\n", my_meta.name);
                 return 1;    
             }
             ret = read_write_buffer(ar_fd, w_fd, buf, my_meta.size);
@@ -173,15 +190,16 @@ int operation_x(int ar_fd, const char * ar_fname, const char * file_to_extract, 
                 struct utimbuf oldt;
                 oldt.actime = my_meta.mtime;
                 oldt.modtime = my_meta.mtime;
-                if (utime(file_to_extract, &oldt) != 0) return 1;
+                if (utime(my_meta.name, &oldt) != 0) return 1;
             }
-            return ret;
+        } else {
+            lseek(ar_fd, my_meta.size, SEEK_CUR);
         }
-        lseek(ar_fd, my_meta.size, SEEK_CUR);
         if (my_meta.size % 2) lseek(ar_fd, 1, SEEK_CUR);
     }
-    if (!hit_flag) {
-        fprintf(stderr, WARN_NO_ENTRY, file_to_extract);
+    
+    for (int i=start; i<end; i++) {
+        if (strlen(files_to_extract[i]) > 0) fprintf(stderr, WARN_NO_ENTRY, files_to_extract[i]);
     }
     return ret;
 }
@@ -191,7 +209,6 @@ int operation_x_all(int ar_fd, const char * ar_fname, char * buf, int x_restore)
     struct meta my_meta;
     int ret;
     int w_fd;
-    lseek(ar_fd, SARMAG, SEEK_SET);
     while ((ret = read(ar_fd, &my_ar_hdr, sizeof(struct ar_hdr))) > 0) {
         // check ar_fmag
         strncpy(buf, my_ar_hdr.ar_fmag, 2);
@@ -201,6 +218,8 @@ int operation_x_all(int ar_fd, const char * ar_fname, char * buf, int x_restore)
             return 1;
         }  // end check
         fill_meta(my_ar_hdr, &my_meta);
+        // TODO: check permission
+        unlink(my_meta.name);
         if (x_restore) {
             //printf("original mode=%o, ~mode=%o\n", my_meta.mode, (~my_meta.mode) & 0777);
             int mask_to_apply = (~my_meta.mode) & 0777;
@@ -214,7 +233,7 @@ int operation_x_all(int ar_fd, const char * ar_fname, char * buf, int x_restore)
             fprintf(stderr, "%s: could not write\n", my_meta.name);
             return 1;    
         }
-        ret = read_write_buffer(ar_fd, w_fd, buf, my_meta.size);
+        ret |= read_write_buffer(ar_fd, w_fd, buf, my_meta.size);
         close(w_fd);
         if (x_restore) {
             struct utimbuf oldt;
@@ -224,6 +243,42 @@ int operation_x_all(int ar_fd, const char * ar_fname, char * buf, int x_restore)
         }
         if (my_meta.size % 2) lseek(ar_fd, 1, SEEK_CUR);
     }
+    return ret;
+}
+
+int operation_d(int ar_fd, const char * ar_fname, char ** files_to_extract, int start, int end,\
+        char * buf, int x_restore) {
+    struct ar_hdr my_ar_hdr;
+    struct meta my_meta;
+    int ret;
+    int w_fd;
+
+    unlink(ar_fname);
+    // write ARMAG
+    if ((w_fd = open(ar_fname, O_WRONLY | O_CREAT | O_TRUNC, 0666)) < 0) return 1;
+    if (write(w_fd, ARMAG, SARMAG) != SARMAG) return 1;
+
+    while ((ret = read(ar_fd, &my_ar_hdr, sizeof(struct ar_hdr))) > 0) {
+        // check ar_fmag
+        strncpy(buf, my_ar_hdr.ar_fmag, 2);
+        buf[2] = '\0';
+        if (strcmp(ARFMAG, buf)) {
+            fprintf(stderr, ERR_MALFORMED, ar_fname);
+            return 1;
+        }  // end check
+        fill_meta(my_ar_hdr, &my_meta);
+        if (search_name_in_array(my_meta.name, files_to_extract, start, end)) {
+            lseek(ar_fd, my_meta.size, SEEK_CUR);
+        } else {
+            ret |= write(w_fd, &my_ar_hdr, sizeof(struct ar_hdr));
+            ret |= read_write_buffer(ar_fd, w_fd, buf, my_meta.size);
+            if (my_meta.size % 2) ret |= write(w_fd, "\n", 1);
+        }
+        if (my_meta.size % 2) lseek(ar_fd, 1, SEEK_CUR);
+    }
+
+    close(ar_fd);
+    close(w_fd);
     return ret;
 }
 
@@ -242,7 +297,7 @@ int main (int argc, char *argv[]) {
     while ((opt = getopt(argc, argv, "qxotvdA:")) != -1) {
         switch (opt) {
             case 't':
-                if (copt != '\0' && copt != 'v') {
+                if (copt != '\0' && copt != 'v' && copt != 'o') {
                     fprintf(stderr, ERR_UNVALID_OP);
                     return 1;
                 }
@@ -252,7 +307,7 @@ int main (int argc, char *argv[]) {
                 verbose = 1;
                 break;
             case 'x':
-                if (copt != '\0' && copt != 'o') {
+                if (copt != '\0' && copt != 'v' && copt != 'o') {
                     fprintf(stderr, ERR_UNVALID_OP);
                     return 1;
                 }
@@ -260,6 +315,13 @@ int main (int argc, char *argv[]) {
                 break;
             case 'o':
                 x_restore = 1;
+                break;
+            case 'd':
+                if (copt != '\0' && copt != 'v' && copt != 'o') {
+                    fprintf(stderr, ERR_UNVALID_OP);
+                    return 1;
+                }
+                copt = 'd';
                 break;
             case '?':
                 return 1;
@@ -276,7 +338,7 @@ int main (int argc, char *argv[]) {
 
     ar_fname = argv[optind++];
 
-    if ((ar_fd = open(ar_fname, O_RDONLY)) < 0) {
+    if ((ar_fd = open(ar_fname, O_RDWR | O_CREAT, 0666)) < 0) {
         fprintf(stderr, ERR_OPEN, ar_fname);
         return 1;
     }
@@ -298,15 +360,22 @@ int main (int argc, char *argv[]) {
         if (optind == argc) {
             ret = operation_x_all(ar_fd, ar_fname, buf, x_restore);
         } else {
-            while (optind < argc) {
-                ret = operation_x(ar_fd, ar_fname, argv[optind++], buf, x_restore);
-            }
+            ret = operation_x(ar_fd, ar_fname, argv, optind, argc, buf, x_restore);
         }
     }  // end copt == 'x'
 
     // add logic for -t
     if (copt == 't') {
         ret = operation_t(ar_fd, ar_fname, verbose);
+    }
+
+    // add logic for -d
+    if (copt == 'd') {
+        if (optind == argc) {
+            ;   //DO Nothing
+        } else {
+            ret = operation_d(ar_fd, ar_fname, argv, optind, argc, buf, x_restore);
+        }
     }
 
     free(buf);
