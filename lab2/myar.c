@@ -509,7 +509,11 @@ int main (int argc, char *argv[]) {
             lseek(ar_fd, 0, SEEK_SET);
             if ((ret = check_ARMAG(ar_fd, buf, ar_fname)) != 0) return ret;
         }
+    } else {
+        fprintf(stderr, "myar: no operation specified\n");
+        return 1;
     }
+
     // add logic for -x
     if (copt == 'x') {
         // no specified files
