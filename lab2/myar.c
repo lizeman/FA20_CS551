@@ -14,9 +14,11 @@
 #include <time.h>
 #include <sys/stat.h>
 #include <sys/types.h>
+#include <dirent.h>
 
 #define BUF_MAX_SIZE 8192
 #define TIME_BUF_MAX_SIZE 80
+#define SECOND_ONE_DAY 86400
 
 #define ERR_USAGE "USAGE: myar [qxotvd:A:] archive-file [file1 .....]\n"
 #define ERR_OPEN "myar: %s: No such file or directory\n"
@@ -24,6 +26,7 @@
 #define ERR_MALFORMED "myar: %s: Malformed archive\n"
 #define ERR_UNVALID_OP "myar: two different operation options specified\n"
 #define ERR_NON_REG "myar: %s: is not regular file\n"
+#define ERR_UNVALID_A "myar: -A %s: argument not valid\n"
 #define WARN_NO_ENTRY "no entry %s in archive\n"
 
 struct meta {
@@ -367,6 +370,53 @@ int operation_q(int ar_fd, const char * ar_fname, char ** files_to_extract, int 
     return ret;
 }
 
+int operation_A(int ar_fd, const char * ar_fname, long N_day, char * buf) {
+    struct dirent *de;
+    DIR *dr = opendir(".");
+    struct ar_hdr my_ar_hdr;
+    struct meta my_meta;
+    int ret = 0;
+    int fd;
+    time_t now = time(0);
+
+    while ((ret = read(ar_fd, &my_ar_hdr, sizeof(struct ar_hdr))) > 0) {
+        // check ar_fmag
+        strncpy(buf, my_ar_hdr.ar_fmag, 2);
+        buf[2] = '\0';
+        if (strcmp(ARFMAG, buf)) {
+            fprintf(stderr, ERR_MALFORMED, ar_fname);
+            return 1;
+        }  // end check
+        fill_meta(my_ar_hdr, &my_meta);
+        lseek(ar_fd, my_meta.size, SEEK_CUR);
+        if (my_meta.size % 2) lseek(ar_fd, 1, SEEK_CUR);
+    }
+
+    // append files
+    if (dr == NULL) {
+        fprintf(stderr, "myar: Could not open current directory\n");
+        return 1;
+    }
+    while ((de = readdir(dr)) != NULL) {
+        if (de->d_type != DT_REG) continue;
+        if (!strcmp(de->d_name, ar_fname)) continue;
+        if (strlen(de->d_name) > 15) continue;
+
+        if ((fd = open(de->d_name, O_RDONLY)) < 0) {
+            fprintf(stderr, ERR_OPEN, de->d_name);
+            return 1;
+        }
+        ret |= fill_ar_hdr(de->d_name, &my_ar_hdr);
+        if (ret != 0) return 1;
+        fill_meta(my_ar_hdr, &my_meta);
+        if ((now - my_meta.mtime) < N_day * SECOND_ONE_DAY) continue;
+        if (write(ar_fd, &my_ar_hdr, sizeof(struct ar_hdr)) != sizeof(struct ar_hdr)) return 1;
+        if ( (ret |= read_write_buffer(fd, ar_fd, buf, my_meta.size)) != 0) return 1;
+        if (my_meta.size % 2) write(ar_fd, "\n", 1);
+        close(fd);
+    }
+}
+
 int main (int argc, char *argv[]) {
     extern char *optarg;
     extern int optind;
@@ -378,6 +428,8 @@ int main (int argc, char *argv[]) {
     int ar_fd;
     int ret = 0;
     char * buf = malloc(BUF_MAX_SIZE);    // 8KB buffer
+    long N_day = -1;
+    char * cptr;
 
     while ((opt = getopt(argc, argv, "qxotvdA:")) != -1) {
         switch (opt) {
@@ -415,6 +467,18 @@ int main (int argc, char *argv[]) {
                 }
                 copt = 'q';
                 break;
+            case 'A':
+                if (copt != '\0' && copt != 'v' && copt != 'o') {
+                    fprintf(stderr, ERR_UNVALID_OP);
+                    return 1;
+                }
+                copt = 'A';
+                N_day = strtol(optarg, &cptr, 10);
+                if (N_day < 0) {
+                    fprintf(stderr, ERR_UNVALID_A, optarg);
+                    return 1;
+                }
+                break;
             case '?':
                 return 1;
                 break;
@@ -438,7 +502,7 @@ int main (int argc, char *argv[]) {
     // Check ARMAG magic string
     if ( copt == 'x' || copt == 't' || copt == 'd' ) {
         if ((ret = check_ARMAG(ar_fd, buf, ar_fname)) != 0) return ret;
-    } else if ( copt == 'q') {
+    } else if ( copt == 'q' || copt == 'A') {
         if (lseek(ar_fd, 0, SEEK_END) == 0) {
             if (write(ar_fd, ARMAG, SARMAG) != SARMAG) return 1;  //TODO: whether need err_msg
         } else {
@@ -473,6 +537,11 @@ int main (int argc, char *argv[]) {
     // add logic for -q
     if (copt == 'q') {
         ret = operation_q(ar_fd, ar_fname, argv, optind, argc, buf);
+    }
+
+    // add logic for -A
+    if (copt == 'A') {
+        ret = operation_A(ar_fd, ar_fname, N_day, buf);
     }
 
     free(buf);
