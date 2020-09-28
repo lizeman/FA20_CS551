@@ -1,5 +1,6 @@
 # Very unsophisticated Makefile, 
 # DEBUG=-g
+DEBUG=-Wno-format-truncation
 
 myar: myar.o 
 	gcc $(DEBUG) -o myar myar.o 

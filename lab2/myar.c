@@ -23,6 +23,7 @@
 #define ERR_INFORMAT "myar: %s: File format not recognized\n"
 #define ERR_MALFORMED "myar: %s: Malformed archive\n"
 #define ERR_UNVALID_OP "myar: two different operation options specified\n"
+#define ERR_NON_REG "myar: %s: is not regular file\n"
 #define WARN_NO_ENTRY "no entry %s in archive\n"
 
 struct meta {
@@ -31,6 +32,19 @@ struct meta {
     int size;
     time_t mtime;   // a time_t is a long
 };
+
+int check_ARMAG(int ar_fd, char * buf, const char * ar_fname) {
+    if (read(ar_fd, buf, SARMAG) < 0) {
+        //TODO: maybe change err msg
+        fprintf(stderr, "read SARMAG failed\n");
+        return 1;
+    }
+    if (strcmp(ARMAG, buf)) {
+        fprintf(stderr, ERR_INFORMAT, ar_fname);
+        return 1;
+    }
+    return 0;
+}
 
 int fill_meta(struct ar_hdr hdr, struct meta * meta) {
     size_t i;
@@ -61,6 +75,36 @@ int fill_meta(struct ar_hdr hdr, struct meta * meta) {
         meta->mtime *= 10;
         meta->mtime += (hdr.ar_date[i] - '0');
     }
+}
+
+int fill_ar_hdr(char * filename, struct ar_hdr * hdr) {
+    struct stat st;
+    size_t i, t;
+    if ((stat(filename, &st)) < 0) {
+        return 1;
+    }
+    if (!S_ISREG(st.st_mode)) {
+        fprintf(stderr, ERR_NON_REG, filename);
+        return 1;
+    }
+    t = strlen(filename);
+    for (i=0; i<sizeof(hdr->ar_name); i++) {
+        if (i < t) hdr->ar_name[i] = filename[i];
+        else if (i == t) hdr->ar_name[i] = '/';
+        else hdr->ar_name[i] = ' ';
+    }
+    snprintf(hdr->ar_date, sizeof(hdr->ar_date), "%-12ld", st.st_mtime);
+    if (hdr->ar_date[sizeof(hdr->ar_date)-1] == '\0') hdr->ar_date[sizeof(hdr->ar_date)-1] = ' ';
+    snprintf(hdr->ar_uid, sizeof(hdr->ar_uid), "%-6u", st.st_uid);
+    if (hdr->ar_uid[sizeof(hdr->ar_uid)-1] == '\0') hdr->ar_uid[sizeof(hdr->ar_uid)-1] = ' ';
+    snprintf(hdr->ar_gid, sizeof(hdr->ar_gid), "%-6u", st.st_gid);
+    if (hdr->ar_gid[sizeof(hdr->ar_gid)-1] == '\0') hdr->ar_gid[sizeof(hdr->ar_gid)-1] = ' ';
+    snprintf(hdr->ar_mode, sizeof(hdr->ar_mode), "%-8o", st.st_mode);
+    if (hdr->ar_mode[sizeof(hdr->ar_mode)-1] == '\0') hdr->ar_mode[sizeof(hdr->ar_mode)-1] = ' ';
+    snprintf(hdr->ar_size, sizeof(hdr->ar_size), "%-10ld", st.st_size);
+    if (hdr->ar_size[sizeof(hdr->ar_size)-1] == '\0') hdr->ar_size[sizeof(hdr->ar_size)-1] = ' ';
+    memcpy(hdr->ar_fmag, ARFMAG, sizeof(hdr->ar_fmag));
+    return 0;
 }
 
 void print_verbose_file_info(struct ar_hdr my_ar_hdr, struct meta my_meta) {
@@ -157,7 +201,7 @@ int operation_x(int ar_fd, const char * ar_fname, char ** files_to_extract, int 
         char * buf, int x_restore) {
     struct ar_hdr my_ar_hdr;
     struct meta my_meta;
-    int ret;
+    int ret = 0;
     int w_fd;
     while ((ret = read(ar_fd, &my_ar_hdr, sizeof(struct ar_hdr))) > 0) {
         // check ar_fmag
@@ -207,7 +251,7 @@ int operation_x(int ar_fd, const char * ar_fname, char ** files_to_extract, int 
 int operation_x_all(int ar_fd, const char * ar_fname, char * buf, int x_restore) {
     struct ar_hdr my_ar_hdr;
     struct meta my_meta;
-    int ret;
+    int ret = 0;
     int w_fd;
     while ((ret = read(ar_fd, &my_ar_hdr, sizeof(struct ar_hdr))) > 0) {
         // check ar_fmag
@@ -250,7 +294,7 @@ int operation_d(int ar_fd, const char * ar_fname, char ** files_to_extract, int 
         char * buf, int x_restore) {
     struct ar_hdr my_ar_hdr;
     struct meta my_meta;
-    int ret;
+    int ret = 0;
     int w_fd;
 
     unlink(ar_fname);
@@ -279,6 +323,47 @@ int operation_d(int ar_fd, const char * ar_fname, char ** files_to_extract, int 
 
     close(ar_fd);
     close(w_fd);
+    return ret;
+}
+
+int operation_q(int ar_fd, const char * ar_fname, char ** files_to_extract, int start, int end,\
+        char * buf) {
+    struct ar_hdr my_ar_hdr;
+    struct meta my_meta;
+    int ret = 0;
+    int fd;
+
+    while ((ret = read(ar_fd, &my_ar_hdr, sizeof(struct ar_hdr))) > 0) {
+        // check ar_fmag
+        strncpy(buf, my_ar_hdr.ar_fmag, 2);
+        buf[2] = '\0';
+        if (strcmp(ARFMAG, buf)) {
+            fprintf(stderr, ERR_MALFORMED, ar_fname);
+            return 1;
+        }  // end check
+        fill_meta(my_ar_hdr, &my_meta);
+        lseek(ar_fd, my_meta.size, SEEK_CUR);
+        if (my_meta.size % 2) lseek(ar_fd, 1, SEEK_CUR);
+    }
+
+    // append files
+    if (ret != 0) {
+        fprintf(stderr, ERR_MALFORMED, ar_fname);
+        return ret;
+    }
+    for (int i=start; i<end; i++) {
+        if ((fd = open(files_to_extract[i], O_RDONLY)) < 0) {
+            fprintf(stderr, ERR_OPEN, files_to_extract[i]);
+            return 1;
+        }
+        ret |= fill_ar_hdr(files_to_extract[i], &my_ar_hdr);
+        if (ret != 0) return 1;
+        if (write(ar_fd, &my_ar_hdr, sizeof(struct ar_hdr)) != sizeof(struct ar_hdr)) return 1;
+        fill_meta(my_ar_hdr, &my_meta);
+        if ( (ret |= read_write_buffer(fd, ar_fd, buf, my_meta.size)) != 0) return 1;
+        if (my_meta.size % 2) write(ar_fd, "\n", 1);
+        close(fd);
+    }
     return ret;
 }
 
@@ -323,6 +408,13 @@ int main (int argc, char *argv[]) {
                 }
                 copt = 'd';
                 break;
+            case 'q':
+                if (copt != '\0' && copt != 'v' && copt != 'o') {
+                    fprintf(stderr, ERR_UNVALID_OP);
+                    return 1;
+                }
+                copt = 'q';
+                break;
             case '?':
                 return 1;
                 break;
@@ -344,16 +436,16 @@ int main (int argc, char *argv[]) {
     }
 
     // Check ARMAG magic string
-    if (read(ar_fd, buf, SARMAG) < 0) {
-        //TODO: maybe change err msg
-        fprintf(stderr, "read SARMAG failed\n");
-        return 1;
+    if ( copt == 'x' || copt == 't' || copt == 'd' ) {
+        if ((ret = check_ARMAG(ar_fd, buf, ar_fname)) != 0) return ret;
+    } else if ( copt == 'q') {
+        if (lseek(ar_fd, 0, SEEK_END) == 0) {
+            if (write(ar_fd, ARMAG, SARMAG) != SARMAG) return 1;  //TODO: whether need err_msg
+        } else {
+            lseek(ar_fd, 0, SEEK_SET);
+            if ((ret = check_ARMAG(ar_fd, buf, ar_fname)) != 0) return ret;
+        }
     }
-    if (strcmp(ARMAG, buf)) {
-        fprintf(stderr, ERR_INFORMAT, ar_fname);
-        return 1;
-    }
-
     // add logic for -x
     if (copt == 'x') {
         // no specified files
@@ -362,7 +454,7 @@ int main (int argc, char *argv[]) {
         } else {
             ret = operation_x(ar_fd, ar_fname, argv, optind, argc, buf, x_restore);
         }
-    }  // end copt == 'x'
+    }
 
     // add logic for -t
     if (copt == 't') {
@@ -376,6 +468,11 @@ int main (int argc, char *argv[]) {
         } else {
             ret = operation_d(ar_fd, ar_fname, argv, optind, argc, buf, x_restore);
         }
+    }
+
+    // add logic for -q
+    if (copt == 'q') {
+        ret = operation_q(ar_fd, ar_fname, argv, optind, argc, buf);
     }
 
     free(buf);
