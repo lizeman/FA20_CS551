@@ -32,14 +32,15 @@ int main(int argc, char *argv[])
     char * cptr;
     char buf;
     int word_cnt;
-    char * word;
+    int ret = 0;
+    int i;
 
     int pids[3];    // 0: main, 1: parse, 2: merge
     int * pid_sorters;
     int whom;      // pid of dead children
     int status;    // child returns status
 
-    int pipefd_parse[2];  //TODO: consider dynamically create pipes
+    int ** pipefd_parse;  // size: sorter_cnt * 2
 
     while ((opt = getopt(argc, argv, "n:s:l:")) != -1) {
         switch (opt) {
@@ -81,30 +82,37 @@ int main(int argc, char *argv[])
     printf("pipesort sorter_count=%d, short=%d, long=%d\n", sorter_count, min_char, max_char);
 
     pids[0] = getpid();
-    pid_sorters = malloc(sorter_count * sizeof(int));
+    pid_sorters = (int *) malloc(sorter_count * sizeof(int));
     printf("In Main process (pid=%d)\n", getpid());
     // Pipe between parser and sorter
-    if (pipe(pipefd_parse) == -1) {
-        perror("Pipe between parser and sorter");
-        exit(1);
+    pipefd_parse = (int **) malloc(sorter_count * sizeof(int *));
+    for (i = 0; i < sorter_count; i++) {
+        pipefd_parse[i] = (int *) malloc(2 * sizeof(int));
+        if (pipe(pipefd_parse[i]) == -1) {
+            perror("Pipe between parser and sorter");
+            exit(1);
+        }
     }
 
-    // Start Parsing inside Parse Process
+    // Start Parsing
     if ((pids[1]=fork()) == -1) {
         perror("Fork parse process");
         exit(1);   // different with exit and return
     }
-    if (pids[1] == 0) {
-        close(pipefd_parse[0]);
-        FILE * fp = fdopen(pipefd_parse[1], "w");
-        if (fp == NULL) {
-            perror("OutPipe between parser and sorter - fdopen");
-            exit(1);
+    if (pids[1] == 0) {   // inside Parse Process
+        char word[max_char+1];
+        FILE * fps[sorter_count];
+        int pipe_idx = 0;
+        for (i = 0; i < sorter_count; i++) {
+            close(pipefd_parse[i][0]);
+            fps[i] = fdopen(pipefd_parse[i][1], "w");
+            if (fps[i] == NULL) {
+                perror("OutPipe between parser and sorter - fdopen");
+                exit(1);
+            }
         }
         printf("In parse process (pid=%d)\n", getpid());
-        word = malloc((max_char+1) * sizeof(char));
         word_cnt = 0;
-        printf("Parsing Result:\n");
         while (fgets(&buf, 2, stdin)) {
             if (is_alphabetic_do_lower(&buf)) {
                 if (word_cnt < max_char) {
@@ -114,39 +122,53 @@ int main(int argc, char *argv[])
                 word[word_cnt] = '\0';
                 if (word_cnt > min_char) {
                     printf("write %s into pipe\n", word);
-                    fputs(word, fp);
-                    fputs("\n", fp);
+                    fputs(word, fps[pipe_idx]);
+                    fputs("\n", fps[pipe_idx++]);
+                    pipe_idx %= sorter_count;
                 }
                 word_cnt = 0;
             }
         }
         if (word_cnt > min_char) {
             printf("write %s into pipe\n", word);
-            fputs(word, fp);
-            fputs("\n", fp);
+            fputs(word, fps[pipe_idx]);
+            fputs("\n", fps[pipe_idx++]);
+            pipe_idx %= sorter_count;
         }
         printf("End Parsing\n");
         if (ferror(stdin)) {
             perror("Stdin read error");
             exit(1);
         }
-        free(word);
-        fclose(fp);
-        close(pipefd_parse[1]);
+        for (i = 0; i < sorter_count; i++) {
+            fclose(fps[i]);
+            close(pipefd_parse[i][1]);
+        }
         exit(0);   // Parse Process exit
     } else {   // Main Process
         // Sorter Processes
-        for (int i=0; i < sorter_count; i++) {
+        for (i=0; i < sorter_count; i++) {
             if ((pid_sorters[i]=fork()) == -1) {
                 perror("Fork sorter process");
                 exit(1);
             }
             if (pid_sorters[i] == 0) {
                 // This is sorter process
-                close(pipefd_parse[1]);
-                printf("In sorter(pid=%d)\n", getpid());
-                dup2(pipefd_parse[0], STDIN_FILENO);
-                execl("/usr/bin/sort", "sort", (char*)NULL);
+                printf("In sorter(pid=%d) when i=%d\n", getpid(), i);
+                for (int j = 0; j < sorter_count; j++) {
+                    close(pipefd_parse[j][1]);
+                    if (i != j) {
+                        close(pipefd_parse[j][0]);
+                    } else {
+                        dup2(pipefd_parse[j][0], STDIN_FILENO);
+                        // debug
+                        char fname[16];
+                        sprintf(fname, "sorter_%d.out", i);
+                        execl("/usr/bin/sort", "sort", "-o", fname, NULL);
+                        // End debug
+                        //execl("/usr/bin/sort", "sort", (char*)NULL);
+                    }
+                }
                 /*
                 FILE * fp = fdopen(pipefd_parse[0], "r");
                 if (fp == NULL) {
@@ -160,29 +182,35 @@ int main(int argc, char *argv[])
                 free(word);
                 fclose(fp);
                 */
-                close(pipefd_parse[0]);
+                // close(pipefd_parse[i][0]);  // Seems no need
+                printf("End sorter(pid=%d) when i=%d\n", getpid(), i);
                 exit(0);
             }
         }
     }
 
         
-    close(pipefd_parse[0]);
-    close(pipefd_parse[1]);
+    for (i=0; i < sorter_count; i++) {
+        close(pipefd_parse[i][0]);
+        close(pipefd_parse[i][1]);
+    }
     // Main Process Wait
-    //for (int i=0; i < 2 + sorter_count
-    for (int i=0; i < 1 + sorter_count; i++) {
+    //for (i=0; i < 2 + sorter_count
+    for (i=0; i < 1 + sorter_count; i++) {
         if ((whom=wait(&status)) == -1) {
             perror("Main wait");
-            exit(1);
+            ret = 1;
+            break;
         }
         if (status != 0) {
             fprintf(stderr, "Child Process[pid=%d] returned %d, exit\n", whom, status);
-            free(pid_sorters);
-            exit(1);
+            ret = 1;
+            break;
         }
         printf("In main process (pid=%d), wait after child (pid=%d) dead\n", getpid(), whom);
     }
     free(pid_sorters);
-    return 0;
+    for (i=0; i < sorter_count; i++) free(pipefd_parse[i]);
+    free(pipefd_parse);
+    return ret;
 } 
