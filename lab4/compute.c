@@ -29,7 +29,7 @@ int test_bit(int* bit_map, int k) {
     else return 0;
 }
 
-void perfect(int start, void* bit_map, process_t prc) {
+void perfect(int start, void* bit_map, process_t* prc) {
     int i, sum;
     int n=start;
 
@@ -39,13 +39,13 @@ void perfect(int start, void* bit_map, process_t prc) {
             for (i=2;i<n;i++)
                 if (!(n%i)) sum+=i;
             if (sum==n) {
-                prc.found += 1;
+                prc->found += 1;
                 // TODO: add report msg sending
             }
-            prc.tested += 1;
+            prc->tested += 1;
             set_bit(bit_map, n);
         } else {  // n-th bit is 1
-            prc.skipped += 1;
+            prc->skipped += 1;
         }
         n++;
         // n hit the end
@@ -148,7 +148,7 @@ int main(int argc, char *argv[]) {
     signal(SIGQUIT, quit);
 
     /* start compute perfect number */
-    perfect(start, bit_map, prc_arr[my_prc_arr_idx]);
+    perfect(start, bit_map, prc_arr+my_prc_arr_idx);
     return 0;
 }
 
