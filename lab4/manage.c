@@ -13,6 +13,12 @@
 
 jmp_buf jmpenv; /* environment saved by setjmp*/
 
+void init_perfect_num_array(int * perfect_num_arr) {
+    for (int i=0; i<MAX_PRC_NUM; i++) {
+        perfect_num_arr[i] = -1;
+    }
+}
+
 void init_process_array(process_t * prc_arr) {
     for (int i=0; i<MAX_PRC_NUM; i++) {
         prc_arr[i].pid = -1;
@@ -36,8 +42,9 @@ void register_compute_process(process_t * prc_arr, pid_t pid) {
 
 void terminate_compute_process(process_t * prc_arr) {
     for (int i=0; i<MAX_PRC_NUM; i++) {
-        if (prc_arr[i].pid == -1) kill(prc_arr[i].pid, SIGINT);
+        if (prc_arr[i].pid != -1) kill(prc_arr[i].pid, SIGINT);
     }
+    printf("finish terminate_compute_process");
 }
 
 int main() {
@@ -55,7 +62,6 @@ int main() {
 
     void quit();
 
-    printf("SHM_SIZE=%ld\n", SHM_SIZE);
     /* create shared segment if necessary */
     if ((sid=shmget(KEY, (size_t)SHM_SIZE, IPC_CREAT |0660))== -1) {
         perror("manage.c -shmget");
@@ -85,13 +91,15 @@ int main() {
     //printf("bit_map=%p, perfect_num_arr=%p, sizeof(int)=%ld, prc_arr=%p\n", bit_map, perfect_num_arr, sizeof(int), prc_arr);
     //printf("sizeof(process_t)=%ld, manage_pid=%p, sizeof(pid_t)=%ld, stat=%p\n", sizeof(process_t), manage_pid, sizeof(pid_t), stat);
     *manage_pid = getpid();
+    init_perfect_num_array(perfect_num_arr);
     init_process_array(prc_arr);
     /* Cleanly deallocate all resources */
     if (setjmp(jmpenv)) {
         printf("manage.c -Travel from longjmp, start clear resources\n");
         /* Terminate compute processes*/
         terminate_compute_process(prc_arr);
-        sleep(5);
+        //sleep(5);
+        printf("After sleep 5 sec\n");
         /* remove semaphore */
         if (semctl(semid, 0, IPC_RMID, 0)) {
             perror("manage.c -semctl IPC_RMID");
@@ -137,7 +145,7 @@ int main() {
         }
     }
 
-    quit(SIGQUIT);
+    quit(SIGINT);
     return ret;
 }
 
