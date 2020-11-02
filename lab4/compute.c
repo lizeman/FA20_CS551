@@ -17,41 +17,48 @@
 #include <stdlib.h>
 
 #define ERR_USAGE "USAGE: compute START\n"
+#define ERR_START "Invalid START: expceted 1~2^31-1, got %s\n"
 
 void set_bit(int* bit_map, int k) {
-    int bits = 8 * sizeof(int *);
+    int bits = 8 * sizeof(int);
     bit_map[k/bits] |= (1 << (k % bits));
 }
 
 int test_bit(int* bit_map, int k) {
-    int bits = 8 * sizeof(int *);
+    int bits = 8 * sizeof(int);
     if ( (bit_map[k/bits] & (1 << (k%bits) )) != 0 ) return 1;  // k-th bit is 1
     else return 0;
 }
 
-void perfect(int start, void* bit_map, process_t* prc) {
+void perfect(int start, void* bit_map, process_t* prc, int qid) {
     int i, sum;
     int n=start;
+    msg_t my_msg;
+    
+    my_msg.type = MSG_TYPE_PREPORT;
 
     while (1) {
+        // n hit the end
+        if (n >= 8 * BMAP_SIZE) break;
+
         if (!test_bit(bit_map, n)) {  // n-th bit is 0
             sum=1;
             for (i=2;i<n;i++)
                 if (!(n%i)) sum+=i;
-            if (sum==n) {
+            if (1 != n && sum==n) {
                 prc->found += 1;
-                // TODO: add report msg sending
+                my_msg.data = n;
+                msgsnd(qid, &my_msg, sizeof(my_msg.data), 0);
             }
             prc->tested += 1;
-            set_bit(bit_map, n);
+            set_bit((int *)bit_map, n);
         } else {  // n-th bit is 1
             prc->skipped += 1;
         }
         n++;
-        // n hit the end
-        if (n >= 8 * BMAP_SIZE) break;
     }
-    // TODO: exec "report -k"
+    //printf("report -k by compute(pid=%d)\n", getpid());
+    execl("report", "report", "-k", NULL);
     while (1) {
         ;  // wait
     }
@@ -80,7 +87,11 @@ int main(int argc, char *argv[]) {
         fprintf(stderr, ERR_USAGE);
     }
     start = atoi(argv[1]);
-    printf("Compute start=%d\n", start);
+    if (start <= 0) {
+        fprintf(stderr, ERR_START, argv[1]);
+        return 1;
+    }
+    //printf("Compute(pid=%d) start=%d\n", my_pid, start);
 
     /* create shared segment if necessary */
     if ((sid=shmget(KEY, (size_t)SHM_SIZE, IPC_CREAT |0660))== -1) {
@@ -121,12 +132,12 @@ int main(int argc, char *argv[]) {
         perror("compute.c -sem lock");
         exit(1);
     }
-    printf("compute(pid=%d) -After semaphore unlocked\n", my_pid);
+    //printf("compute(pid=%d) -After semaphore unlocked\n", my_pid);
     /* Scan prc_arr to locate my row */
     for (my_prc_arr_idx=0; my_prc_arr_idx < MAX_PRC_NUM; my_prc_arr_idx++) {
         if (my_pid == prc_arr[my_prc_arr_idx].pid) break;
     }
-    printf("compute.c my_prc_arr_idx=%d, pid=%d\n", my_prc_arr_idx, prc_arr[my_prc_arr_idx].pid);
+    //printf("compute.c my_prc_arr_idx=%d, pid=%d\n", my_prc_arr_idx, prc_arr[my_prc_arr_idx].pid);
     if (my_prc_arr_idx >= MAX_PRC_NUM) {
         fprintf(stderr, "compute(pid=%d) can NOT locate index in bit_map\n", my_pid);
         return 1;
@@ -134,7 +145,7 @@ int main(int argc, char *argv[]) {
 
     /* Quit() when tralvel from longjmp */
     if (setjmp(jmpenv)) {
-        printf("compute(pid=%d) -Travel from longjmp\n", my_pid);
+        //printf("compute(pid=%d) -Travel from longjmp\n", my_pid);
         prc_arr[my_prc_arr_idx].pid = -1;
         // add tested, skipped, found into stats
         stat->tested += prc_arr[my_prc_arr_idx].tested;
@@ -148,13 +159,13 @@ int main(int argc, char *argv[]) {
     signal(SIGQUIT, quit);
 
     /* start compute perfect number */
-    perfect(start, bit_map, prc_arr+my_prc_arr_idx);
+    perfect(start, bit_map, prc_arr+my_prc_arr_idx, qid);
     return 0;
 }
 
 void quit(signum)
     int signum;
 {
-    printf("compute.c -quit() signum=%d\n", signum);
+    //printf("compute.c -quit() signum=%d\n", signum);
     longjmp(jmpenv, 1);
 }

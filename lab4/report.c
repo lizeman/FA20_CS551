@@ -73,6 +73,7 @@ int main(int argc, char *argv[]) {
     printf("Perfect Number Found: ");
     for (i=0; i<MAX_PRC_NUM; i++) {
         if (perfect_num_arr[i] == -1) break;
+        found++;
         printf("%d ", perfect_num_arr[i]);
     }
     printf("\n");
@@ -81,12 +82,12 @@ int main(int argc, char *argv[]) {
         if (prc_arr[i].pid == -1) continue;
         printf("pid(%d): found: %d, tested: %d, skipped: %d\n",\
                 prc_arr[i].pid, prc_arr[i].found, prc_arr[i].tested, prc_arr[i].skipped);
-        found += prc_arr[i].found;
+        //found += prc_arr[i].found;
         tested += prc_arr[i].tested;
         skipped += prc_arr[i].skipped;
     }
     // Statistics
-    found += stat->found;
+    //found += stat->found;
     tested += stat->tested;
     skipped += stat->skipped;
     printf("Statistics:\n");

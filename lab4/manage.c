@@ -1,3 +1,8 @@
+// THIS CODE IS MY OWN WORK, IT WAS WRITTEN WITHOUT CONSULTING
+//
+// A TUTOR OR CODE WRITTEN BY OTHER STUDENTS - Jiaying Lu
+//
+
 #include "defs.h"
 #include <errno.h>
 #include <sys/types.h>
@@ -19,6 +24,26 @@ void init_perfect_num_array(int * perfect_num_arr) {
     }
 }
 
+void append_perfect_num_array(int * perfect_num_arr, int n) {
+    int cur = n;
+    int tmp;
+    for (int i=0; i<MAX_PRC_NUM; i++) {
+        if (perfect_num_arr[i] == -1) {
+            perfect_num_arr[i] = cur;
+            break;
+        } else {
+            if (perfect_num_arr[i] > cur) {
+                //swap
+                tmp = perfect_num_arr[i];
+                perfect_num_arr[i] = cur;
+                cur = tmp;
+            } else if (perfect_num_arr[i] == cur) {
+                break;
+            }
+        }
+    }
+}
+
 void init_process_array(process_t * prc_arr) {
     for (int i=0; i<MAX_PRC_NUM; i++) {
         prc_arr[i].pid = -1;
@@ -37,6 +62,7 @@ void register_compute_process(process_t * prc_arr, pid_t pid) {
         }
     }
     // No available slot
+    fprintf(stderr, "No avialable slot for new incoming compute(pid=%d). Gonna kill it\n", pid);
     kill(pid, SIGINT);
 }
 
@@ -44,8 +70,9 @@ void terminate_compute_process(process_t * prc_arr) {
     for (int i=0; i<MAX_PRC_NUM; i++) {
         if (prc_arr[i].pid != -1) kill(prc_arr[i].pid, SIGINT);
     }
-    printf("finish terminate_compute_process");
+    //printf("finish terminate_compute_process");
 }
+
 
 int main() {
     int sid = -1;        /* segment id of shared memory segment */
@@ -95,11 +122,10 @@ int main() {
     init_process_array(prc_arr);
     /* Cleanly deallocate all resources */
     if (setjmp(jmpenv)) {
-        printf("manage.c -Travel from longjmp, start clear resources\n");
+        //printf("manage.c -Travel from longjmp, start clear resources\n");
         /* Terminate compute processes*/
         terminate_compute_process(prc_arr);
-        //sleep(5);
-        printf("After sleep 5 sec\n");
+        sleep(5);
         /* remove semaphore */
         if (semctl(semid, 0, IPC_RMID, 0)) {
             perror("manage.c -semctl IPC_RMID");
@@ -135,13 +161,16 @@ int main() {
     while (1) {
         msgrcv(qid, &my_msg, sizeof(my_msg.data), 0, 0);
         if (my_msg.type == MSG_TYPE_REGISTER) {
-            printf("manage.c receieve msg: type=%ld, data=%d\n", my_msg.type, my_msg.data);
+            //printf("manage.c receieve msg: type=%ld, data=%d\n", my_msg.type, my_msg.data);
             // initial a row in prc_arr
             register_compute_process(prc_arr, my_msg.data);
             if (semop(semid, &sb, 1) == -1) { /* will unlock semaphore */
                 perror("manage.c -sem unlock");
                 exit(1);
             }
+        } else if (my_msg.type == MSG_TYPE_PREPORT) {
+            append_perfect_num_array(perfect_num_arr, my_msg.data);
+            //printf("manage.c append_perfect_num_array n=%d\n", my_msg.data);
         }
     }
 
@@ -152,6 +181,6 @@ int main() {
 void quit(signum)
     int signum;
 {
-    printf("manage.c -quit() signum=%d\n", signum);
+    //printf("manage.c -quit() signum=%d\n", signum);
     longjmp(jmpenv, 1);
 }

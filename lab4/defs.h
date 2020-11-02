@@ -13,7 +13,7 @@
 #define MAX_PRC_NUM 20
 #define SHM_SIZE (size_t)BMAP_SIZE + MAX_PRC_NUM * sizeof(int) + MAX_PRC_NUM * sizeof(process_t) + sizeof(pid_t) + sizeof(process_t)
 #define MSG_TYPE_REGISTER 1
-#define MSG_TYPE_PREPORT 1
+#define MSG_TYPE_PREPORT 2
 
 typedef struct {
     long type;
